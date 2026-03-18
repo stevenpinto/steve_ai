@@ -47,7 +47,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::787759451164:role/GitHubActions-SteveAI-Deploy
+          role-to-assume: arn:aws:iam::787759451164:role/GitHubActions-SteveAI-DeployDe
+
           aws-region: us-east-1
 
       # ---------- DEPLOY BACKEND ----------
