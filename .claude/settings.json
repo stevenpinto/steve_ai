@@ -12,7 +12,8 @@
       "WebFetch(domain:medium.com)",
       "WebFetch(domain:stevenpinto.com)",
       "Bash(node local-runner.js)",
-      "WebFetch(domain:myhalobar.com)"
+      "WebFetch(domain:myhalobar.com)",
+      "Bash(find /c/Users/steve/Documents/development/steve_ai -maxdepth 4 -type f \\\\\\(-name *gateway* -o -name *api* -o -name *.tf \\\\\\))"
     ],
     "additionalDirectories": [
       "c:\\Users\\steve\\Documents\\development\\knowledge-builder",

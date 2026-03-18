@@ -7,12 +7,12 @@ class SteveAIWidget extends HTMLElement {
     this.isOpen = false;
     this.isLoading = false;
     this.sessionId = this._generateSessionId();
-    this.mode = this.getAttribute("mode") || "public";
-    this.apiUrl =
-      this.getAttribute("api-url") || "http://localhost:3001";
   }
 
   connectedCallback() {
+    this.mode = this.getAttribute("mode") || "public";
+    this.apiUrl =
+      this.getAttribute("api-url") || "http://localhost:3001";
     this._render();
     this._attachEvents();
   }
