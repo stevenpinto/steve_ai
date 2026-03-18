@@ -38,7 +38,7 @@ CONVERSATION HISTORY:
 
 USER QUESTION: {question}
 
-Respond helpfully based on the context provided. If the context doesn't contain relevant information, say so honestly.`);
+IMPORTANT: Always use the CONTEXT FROM KNOWLEDGE BASE above to answer. It contains Steve's real, up-to-date information including article titles, dates, project details, and work history. Do not say you don't have information if it appears in the context. Respond helpfully and specifically, citing details from the context.`);
 
   const chain = RunnableSequence.from([
     {

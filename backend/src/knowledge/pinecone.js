@@ -31,7 +31,7 @@ async function getRetriever(mode = "public") {
       namespace: "steve_public_index",
     });
 
-    return vectorStore.asRetriever({ k: 5, searchType: "similarity" });
+    return vectorStore.asRetriever({ k: 8, searchType: "similarity" });
   }
 
   // Private: query BOTH namespaces and merge results
