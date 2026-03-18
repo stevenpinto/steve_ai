@@ -155,7 +155,14 @@ Set these in your Lambda configuration:
 - `ANTHROPIC_API_KEY`
 - `PINECONE_API_KEY`
 - `PINECONE_INDEX_NAME`
+- `ADMIN_KEY` — a secret key for accessing the feedback admin endpoints
 - `NODE_ENV=production`
+
+### GitHub Actions Secrets
+
+The CI/CD workflow uses OIDC to authenticate with AWS. Add this secret in your repo under Settings → Secrets and variables → Actions:
+
+- `AWS_ROLE_ARN` — the ARN of your IAM role with a trust policy for GitHub OIDC (e.g., `arn:aws:iam::123456789012:role/YourRoleName`)
 
 ## Tech Stack
 
