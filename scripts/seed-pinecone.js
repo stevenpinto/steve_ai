@@ -78,8 +78,8 @@ async function seed() {
 
   // Split into chunks
   const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 500,
-    chunkOverlap: 50,
+    chunkSize: 1500,
+    chunkOverlap: 200,
   });
 
   const publicChunks = await splitter.splitDocuments(publicDocs);
@@ -112,6 +112,12 @@ async function seed() {
       });
     }
   }
+
+  // Clear existing vectors before re-seeding
+  console.log("\nClearing existing vectors...");
+  await index.namespace("steve_public_index").deleteAll();
+  await index.namespace("steve_private_index").deleteAll();
+  console.log("Cleared.");
 
   // Seed public namespace
   if (publicChunks.length > 0) {

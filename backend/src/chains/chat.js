@@ -20,7 +20,7 @@ async function createChatChain(mode = "public") {
     apiKey: process.env.ANTHROPIC_API_KEY,
     model: "claude-sonnet-4-20250514",
     temperature: 0.3,
-    maxTokens: 1024,
+    maxTokens: 512,
   });
 
   const systemPrompt =
@@ -38,7 +38,7 @@ CONVERSATION HISTORY:
 
 USER QUESTION: {question}
 
-IMPORTANT: Always use the CONTEXT FROM KNOWLEDGE BASE above to answer. It contains Steve's real, up-to-date information including article titles, dates, project details, and work history. Do not say you don't have information if it appears in the context. Respond helpfully and specifically, citing details from the context.`);
+IMPORTANT: Always use the CONTEXT FROM KNOWLEDGE BASE above to answer. It contains Steve's real, up-to-date information including article titles, dates, project details, and work history. Do not say you don't have information if it appears in the context. Respond helpfully and specifically, citing details from the context. Keep responses concise — 2-4 sentences for simple questions, no more than a short paragraph for complex ones. Do not add filler, disclaimers, or suggest checking external sources when the answer is in the context.`);
 
   const chain = RunnableSequence.from([
     {
