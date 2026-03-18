@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 const fs = require("fs");
 const path = require("path");
 const serverlessHttp = require("serverless-http");
@@ -26,7 +27,27 @@ function saveFeedback(feedback) {
 
 const app = express();
 
-app.use(cors());
+// CORS — only allow requests from stevenpinto.com
+const allowedOrigins = [
+  "https://stevenpinto.com",
+  "https://www.stevenpinto.com",
+  "https://new.stevenpinto.com",
+];
+if (process.env.NODE_ENV !== "production") {
+  allowedOrigins.push("http://localhost:3000", "http://localhost:3001", "http://localhost:5000");
+}
+app.use(cors({ origin: allowedOrigins }));
+
+// Rate limiting — 10 requests per minute per IP on chat endpoints
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: "Too many requests. Please wait a moment and try again." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip || req.headers["x-forwarded-for"] || "unknown",
+});
+
 app.use(express.json());
 
 // In-memory session store (replaced by DynamoDB in production)
@@ -113,10 +134,10 @@ async function handleStreamingChat(req, res, mode) {
 }
 
 // Public chat endpoint (streaming)
-app.post("/api/chat/public", (req, res) => handleStreamingChat(req, res, "public"));
+app.post("/api/chat/public", chatLimiter, (req, res) => handleStreamingChat(req, res, "public"));
 
 // Private chat endpoint (streaming)
-app.post("/api/chat/private", (req, res) => handleStreamingChat(req, res, "private"));
+app.post("/api/chat/private", chatLimiter, (req, res) => handleStreamingChat(req, res, "private"));
 
 // Submit feedback (thumbs up/down from widget)
 app.post("/api/feedback", (req, res) => {
@@ -155,7 +176,7 @@ app.post("/api/feedback", (req, res) => {
 app.get("/api/feedback", (req, res) => {
   try {
     const adminKey = req.headers["x-admin-key"];
-    if (adminKey !== (process.env.ADMIN_KEY || "steve-admin-local")) {
+    if (!process.env.ADMIN_KEY || adminKey !== process.env.ADMIN_KEY) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -174,7 +195,7 @@ app.get("/api/feedback", (req, res) => {
 app.patch("/api/feedback/:id", (req, res) => {
   try {
     const adminKey = req.headers["x-admin-key"];
-    if (adminKey !== (process.env.ADMIN_KEY || "steve-admin-local")) {
+    if (!process.env.ADMIN_KEY || adminKey !== process.env.ADMIN_KEY) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -204,7 +225,7 @@ app.patch("/api/feedback/:id", (req, res) => {
 app.delete("/api/feedback/:id", (req, res) => {
   try {
     const adminKey = req.headers["x-admin-key"];
-    if (adminKey !== (process.env.ADMIN_KEY || "steve-admin-local")) {
+    if (!process.env.ADMIN_KEY || adminKey !== process.env.ADMIN_KEY) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 

@@ -7,6 +7,8 @@ dist/
 .DS_Store
 Thumbs.db
 backend/data/
+widget/admin.html
+.claude/
 
 # Knowledge base content (personal - create your own)
 knowledge-base/public/*.md
