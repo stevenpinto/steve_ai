@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ask Steve AI - Widget Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 40px;
+      background: #f1f5f9;
+      color: #1e293b;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+    p {
+      color: #64748b;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      margin-bottom: 16px;
+    }
+    code {
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Steve Pinto</h1>
+    <p>IT Director &mdash; This is a test page for the Ask Steve AI chat widget.</p>
+
+    <div class="card">
+      <h2>About</h2>
+      <p>This page simulates embedding the Ask Steve AI widget on stevenpinto.com. Click the blue chat bubble in the bottom-right corner to try it out.</p>
+    </div>
+
+    <div class="card">
+      <h2>Embed Code</h2>
+      <p>Add this to any webpage to embed the widget:</p>
+      <pre>&lt;script src="https://stevenpinto.com/widget/steve-ai-widget.js"&gt;&lt;/script&gt;
+&lt;steve-ai-widget mode="public" api-url="https://api.stevenpinto.com"&gt;&lt;/steve-ai-widget&gt;</pre>
+    </div>
+
+    <div class="card">
+      <h2>Configuration</h2>
+      <p>Attributes:</p>
+      <ul>
+        <li><code>mode</code> — "public" (default) or "private"</li>
+        <li><code>api-url</code> — Backend API URL (default: http://localhost:3001)</li>
+        <li><code>auth-token</code> — Google auth token (private mode only)</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- The widget: one script tag, one custom element -->
+  <script src="dist/steve-ai-widget.js"></script>
+  <steve-ai-widget mode="public" api-url="http://localhost:3001"></steve-ai-widget>
+</body>
+</html>

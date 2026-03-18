@@ -1,0 +1,237 @@
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
+const serverlessHttp = require("serverless-http");
+const { createChatChain } = require("./chains/chat");
+
+// Feedback store (JSON file — migrates to DynamoDB in production)
+const FEEDBACK_FILE = path.join(__dirname, "../data/feedback.json");
+
+function loadFeedback() {
+  try {
+    fs.mkdirSync(path.dirname(FEEDBACK_FILE), { recursive: true });
+    if (fs.existsSync(FEEDBACK_FILE)) {
+      return JSON.parse(fs.readFileSync(FEEDBACK_FILE, "utf-8"));
+    }
+  } catch {}
+  return [];
+}
+
+function saveFeedback(feedback) {
+  fs.mkdirSync(path.dirname(FEEDBACK_FILE), { recursive: true });
+  fs.writeFileSync(FEEDBACK_FILE, JSON.stringify(feedback, null, 2));
+}
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+
+// In-memory session store (replaced by DynamoDB in production)
+const sessions = new Map();
+
+function getSession(sessionId) {
+  if (!sessions.has(sessionId)) {
+    sessions.set(sessionId, { history: [] });
+  }
+  return sessions.get(sessionId);
+}
+
+function formatHistory(history) {
+  if (history.length === 0) return "No previous conversation.";
+  return history
+    .map((msg) => `${msg.role === "user" ? "User" : "Steve AI"}: ${msg.content}`)
+    .join("\n");
+}
+
+// Health check
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Streaming chat handler (shared by public and private)
+async function handleStreamingChat(req, res, mode) {
+  try {
+    const { message, sessionId } = req.body;
+    const maxLen = mode === "private" ? 5000 : 2000;
+    const maxHistory = mode === "private" ? 40 : 20;
+    const sid = sessionId || (mode === "private" ? "private-default" : "anonymous");
+
+    if (!message || typeof message !== "string" || message.trim().length === 0) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    if (message.length > maxLen) {
+      return res.status(400).json({ error: `Message too long (max ${maxLen} characters)` });
+    }
+
+    // Set up SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.flushHeaders();
+
+    const session = getSession(sid);
+    const chain = await createChatChain(mode);
+
+    // Stream the response
+    let fullResponse = "";
+    const stream = await chain.stream({
+      question: message.trim(),
+      history: formatHistory(session.history),
+    });
+
+    for await (const chunk of stream) {
+      fullResponse += chunk;
+      // Send each chunk as an SSE event
+      res.write(`data: ${JSON.stringify({ token: chunk })}\n\n`);
+    }
+
+    // Send done event
+    res.write(`data: ${JSON.stringify({ done: true, sessionId: sid })}\n\n`);
+    res.end();
+
+    // Update session history after stream completes
+    session.history.push({ role: "user", content: message.trim() });
+    session.history.push({ role: "assistant", content: fullResponse });
+    if (session.history.length > maxHistory) {
+      session.history = session.history.slice(-maxHistory);
+    }
+  } catch (error) {
+    console.error(`${mode} chat error:`, error);
+    // If headers already sent, send error as SSE
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({ error: "Something went wrong." })}\n\n`);
+      res.end();
+    } else {
+      res.status(500).json({ error: "Something went wrong. Please try again." });
+    }
+  }
+}
+
+// Public chat endpoint (streaming)
+app.post("/api/chat/public", (req, res) => handleStreamingChat(req, res, "public"));
+
+// Private chat endpoint (streaming)
+app.post("/api/chat/private", (req, res) => handleStreamingChat(req, res, "private"));
+
+// Submit feedback (thumbs up/down from widget)
+app.post("/api/feedback", (req, res) => {
+  try {
+    const { question, response, rating, comment, sessionId } = req.body;
+
+    if (!question || !response || !rating) {
+      return res.status(400).json({ error: "question, response, and rating are required" });
+    }
+
+    if (!["up", "down"].includes(rating)) {
+      return res.status(400).json({ error: "rating must be 'up' or 'down'" });
+    }
+
+    const feedback = loadFeedback();
+    feedback.push({
+      id: Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+      question: question.substring(0, 2000),
+      response: response.substring(0, 5000),
+      rating,
+      comment: (comment || "").substring(0, 1000),
+      sessionId: sessionId || "anonymous",
+      timestamp: new Date().toISOString(),
+      status: "pending", // pending, approved, dismissed
+    });
+    saveFeedback(feedback);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Feedback error:", error);
+    res.status(500).json({ error: "Failed to save feedback" });
+  }
+});
+
+// Get all feedback (admin endpoint)
+app.get("/api/feedback", (req, res) => {
+  try {
+    const adminKey = req.headers["x-admin-key"];
+    if (adminKey !== (process.env.ADMIN_KEY || "steve-admin-local")) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const feedback = loadFeedback();
+    const status = req.query.status; // filter by status: pending, approved, dismissed
+    const filtered = status ? feedback.filter((f) => f.status === status) : feedback;
+
+    res.json(filtered.reverse()); // newest first
+  } catch (error) {
+    console.error("Feedback fetch error:", error);
+    res.status(500).json({ error: "Failed to load feedback" });
+  }
+});
+
+// Update feedback status (admin: approve or dismiss)
+app.patch("/api/feedback/:id", (req, res) => {
+  try {
+    const adminKey = req.headers["x-admin-key"];
+    if (adminKey !== (process.env.ADMIN_KEY || "steve-admin-local")) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { status } = req.body;
+    if (!["approved", "dismissed", "pending"].includes(status)) {
+      return res.status(400).json({ error: "status must be 'approved', 'dismissed', or 'pending'" });
+    }
+
+    const feedback = loadFeedback();
+    const item = feedback.find((f) => f.id === req.params.id);
+    if (!item) {
+      return res.status(404).json({ error: "Feedback not found" });
+    }
+
+    item.status = status;
+    item.reviewedAt = new Date().toISOString();
+    saveFeedback(feedback);
+
+    res.json(item);
+  } catch (error) {
+    console.error("Feedback update error:", error);
+    res.status(500).json({ error: "Failed to update feedback" });
+  }
+});
+
+// Delete feedback (admin)
+app.delete("/api/feedback/:id", (req, res) => {
+  try {
+    const adminKey = req.headers["x-admin-key"];
+    if (adminKey !== (process.env.ADMIN_KEY || "steve-admin-local")) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    let feedback = loadFeedback();
+    const before = feedback.length;
+    feedback = feedback.filter((f) => f.id !== req.params.id);
+    if (feedback.length === before) {
+      return res.status(404).json({ error: "Feedback not found" });
+    }
+
+    saveFeedback(feedback);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Feedback delete error:", error);
+    res.status(500).json({ error: "Failed to delete feedback" });
+  }
+});
+
+// Local development server (skip when loaded via local-runner.js)
+if (process.env.NODE_ENV !== "production" && !process.env.USE_LOCAL_RUNNER) {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`Steve AI backend running on http://localhost:${PORT}`);
+    console.log(`Health check: http://localhost:${PORT}/health`);
+  });
+}
+
+// Lambda handler export
+module.exports.handler = serverlessHttp(app);
+module.exports.app = app;

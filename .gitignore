@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.local
+dist/
+.serverless/
+*.zip
+.DS_Store
+Thumbs.db
+backend/data/
+
+# Knowledge base content (personal - create your own)
+knowledge-base/public/*.md
+knowledge-base/public/*.pdf
+knowledge-base/public/*.txt
+knowledge-base/private/

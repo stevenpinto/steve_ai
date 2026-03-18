@@ -1,0 +1,9 @@
+{
+  "name": "steve-ai-widget",
+  "version": "1.0.0",
+  "description": "Ask Steve AI - Embeddable chat widget",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js && npx serve . -p 3000 -C"
+  }
+}
