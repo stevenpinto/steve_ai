@@ -1,84 +1,59 @@
-name: Deploy to AWS
+name: Deploy Steve AI
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-
-permissions:
-  id-token: write
-  contents: read
 
 jobs:
-  deploy-backend:
-    name: Deploy Backend (Lambda)
+  deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install backend dependencies
-        working-directory: backend
-        run: npm ci --production
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Package Lambda
-        working-directory: backend
+      # ---------- BACKEND PACKAGE ----------
+      - name: Install backend deps
         run: |
-          zip -r ../backend.zip . -x "*.env*" "node_modules/.cache/*"
+          cd backend
+          npm ci --omit=dev
 
-      - name: Deploy Lambda
+      - name: Zip Lambda
         run: |
-          aws lambda update-function-code \
-            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
-            --zip-file fileb://backend.zip
+          cd backend
+          zip -r lambda.zip src node_modules package.json
 
-      - name: Update Lambda environment
+      # ---------- WIDGET BUILD ----------
+      - name: Install widget deps
         run: |
-          aws lambda update-function-configuration \
-            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
-            --environment "Variables={NODE_ENV=production,ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }},PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }},PINECONE_INDEX_NAME=${{ secrets.PINECONE_INDEX_NAME }}}"
-
-  deploy-widget:
-    name: Deploy Widget (S3 + CloudFront)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install widget dependencies
-        working-directory: widget
-        run: npm ci
+          cd widget
+          npm ci
 
       - name: Build widget
-        working-directory: widget
-        run: npm run build
+        run: |
+          cd widget
+          npm run build
 
+      # ---------- CONFIGURE AWS ----------
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: arn:aws:iam::787759451164:role/GitHubActions-SteveAI-Deploy
+          aws-region: us-east-1
 
-      - name: Deploy to S3
+      # ---------- DEPLOY BACKEND ----------
+      - name: Update Lambda
         run: |
-          aws s3 sync widget/dist/ s3://${{ secrets.WIDGET_S3_BUCKET }}/ \
-            --delete \
-            --cache-control "public, max-age=31536000"
-
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-            --paths "/*"
+          aws lambda update-function-code \
+            --function-name steve-ai-backend \
+            --zip-file fileb://backend/lambda.zip \
+            --publish
