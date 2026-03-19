@@ -19,7 +19,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # ---------- BACKEND PACKAGE ----------
       - name: Install backend deps
@@ -57,3 +57,7 @@ jobs:
             --function-name steve-ai-backend \
             --zip-file fileb://backend/lambda.zip \
             --publish
+          aws lambda wait function-updated --function-name steve-ai-backend
+          aws lambda update-function-configuration \
+            --function-name steve-ai-backend \
+            --runtime nodejs22.x
