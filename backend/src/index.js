@@ -108,7 +108,6 @@ const chatLimiter = rateLimit({
   message: { error: "Too many requests. Please wait a moment and try again." },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip || req.headers["x-forwarded-for"] || "unknown",
 });
 
 app.use(express.json());
@@ -128,6 +127,13 @@ function formatHistory(history) {
   return history
     .map((msg) => `${msg.role === "user" ? "User" : "Steve AI"}: ${msg.content}`)
     .join("\n");
+}
+
+// Admin UI (local dev only)
+if (process.env.NODE_ENV !== "production") {
+  app.get("/admin", (req, res) => {
+    res.sendFile(path.resolve(__dirname, "../../widget/admin.html"));
+  });
 }
 
 // Health check
