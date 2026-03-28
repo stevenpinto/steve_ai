@@ -7,9 +7,72 @@ const path = require("path");
 const serverlessHttp = require("serverless-http");
 const { createChatChain } = require("./chains/chat");
 
-// Feedback store (JSON file — migrates to DynamoDB in production)
+// Feedback store — DynamoDB in production, JSON file fallback for local dev
+const FEEDBACK_TABLE = process.env.FEEDBACK_TABLE;
 const FEEDBACK_FILE = path.join(__dirname, "../data/feedback.json");
 
+let dynamo = null;
+if (FEEDBACK_TABLE) {
+  const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+  const { DynamoDBDocumentClient } = require("@aws-sdk/lib-dynamodb");
+  dynamo = DynamoDBDocumentClient.from(
+    new DynamoDBClient({ region: process.env.AWS_REGION || "us-east-1" })
+  );
+}
+
+// --- DynamoDB helpers ---
+async function dbPutFeedback(item) {
+  const { PutCommand } = require("@aws-sdk/lib-dynamodb");
+  await dynamo.send(new PutCommand({ TableName: FEEDBACK_TABLE, Item: item }));
+}
+
+async function dbGetFeedback(id) {
+  const { GetCommand } = require("@aws-sdk/lib-dynamodb");
+  const result = await dynamo.send(
+    new GetCommand({ TableName: FEEDBACK_TABLE, Key: { id } })
+  );
+  return result.Item || null;
+}
+
+async function dbScanFeedback(status) {
+  const { ScanCommand } = require("@aws-sdk/lib-dynamodb");
+  const params = { TableName: FEEDBACK_TABLE };
+  if (status) {
+    params.FilterExpression = "#s = :s";
+    params.ExpressionAttributeNames = { "#s": "status" };
+    params.ExpressionAttributeValues = { ":s": status };
+  }
+  const result = await dynamo.send(new ScanCommand(params));
+  return result.Items || [];
+}
+
+async function dbUpdateFeedback(id, updates) {
+  const { UpdateCommand } = require("@aws-sdk/lib-dynamodb");
+  const entries = Object.entries(updates);
+  const expression = entries.map((_, i) => `#k${i} = :v${i}`).join(", ");
+  const names = Object.fromEntries(entries.map(([k], i) => [`#k${i}`, k]));
+  const values = Object.fromEntries(entries.map(([, v], i) => [`:v${i}`, v]));
+  const result = await dynamo.send(
+    new UpdateCommand({
+      TableName: FEEDBACK_TABLE,
+      Key: { id },
+      UpdateExpression: `SET ${expression}`,
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: values,
+      ReturnValues: "ALL_NEW",
+    })
+  );
+  return result.Attributes;
+}
+
+async function dbDeleteFeedback(id) {
+  const { DeleteCommand } = require("@aws-sdk/lib-dynamodb");
+  await dynamo.send(
+    new DeleteCommand({ TableName: FEEDBACK_TABLE, Key: { id } })
+  );
+}
+
+// --- Local JSON fallback helpers ---
 function loadFeedback() {
   try {
     fs.mkdirSync(path.dirname(FEEDBACK_FILE), { recursive: true });
@@ -140,7 +203,7 @@ app.post("/api/chat/public", chatLimiter, (req, res) => handleStreamingChat(req,
 app.post("/api/chat/private", chatLimiter, (req, res) => handleStreamingChat(req, res, "private"));
 
 // Submit feedback (thumbs up/down from widget)
-app.post("/api/feedback", (req, res) => {
+app.post("/api/feedback", async (req, res) => {
   try {
     const { question, response, rating, comment, sessionId } = req.body;
 
@@ -152,8 +215,7 @@ app.post("/api/feedback", (req, res) => {
       return res.status(400).json({ error: "rating must be 'up' or 'down'" });
     }
 
-    const feedback = loadFeedback();
-    feedback.push({
+    const item = {
       id: Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
       question: question.substring(0, 2000),
       response: response.substring(0, 5000),
@@ -161,9 +223,16 @@ app.post("/api/feedback", (req, res) => {
       comment: (comment || "").substring(0, 1000),
       sessionId: sessionId || "anonymous",
       timestamp: new Date().toISOString(),
-      status: "pending", // pending, approved, dismissed
-    });
-    saveFeedback(feedback);
+      status: "pending",
+    };
+
+    if (dynamo) {
+      await dbPutFeedback(item);
+    } else {
+      const feedback = loadFeedback();
+      feedback.push(item);
+      saveFeedback(feedback);
+    }
 
     res.json({ success: true });
   } catch (error) {
@@ -173,18 +242,24 @@ app.post("/api/feedback", (req, res) => {
 });
 
 // Get all feedback (admin endpoint)
-app.get("/api/feedback", (req, res) => {
+app.get("/api/feedback", async (req, res) => {
   try {
     const adminKey = req.headers["x-admin-key"];
     if (!process.env.ADMIN_KEY || adminKey !== process.env.ADMIN_KEY) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const feedback = loadFeedback();
-    const status = req.query.status; // filter by status: pending, approved, dismissed
-    const filtered = status ? feedback.filter((f) => f.status === status) : feedback;
+    const status = req.query.status;
+    let items;
+    if (dynamo) {
+      items = await dbScanFeedback(status);
+    } else {
+      const feedback = loadFeedback();
+      items = status ? feedback.filter((f) => f.status === status) : feedback;
+    }
 
-    res.json(filtered.reverse()); // newest first
+    items.sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1)); // newest first
+    res.json(items);
   } catch (error) {
     console.error("Feedback fetch error:", error);
     res.status(500).json({ error: "Failed to load feedback" });
@@ -192,7 +267,7 @@ app.get("/api/feedback", (req, res) => {
 });
 
 // Update feedback status (admin: approve or dismiss)
-app.patch("/api/feedback/:id", (req, res) => {
+app.patch("/api/feedback/:id", async (req, res) => {
   try {
     const adminKey = req.headers["x-admin-key"];
     if (!process.env.ADMIN_KEY || adminKey !== process.env.ADMIN_KEY) {
@@ -204,17 +279,21 @@ app.patch("/api/feedback/:id", (req, res) => {
       return res.status(400).json({ error: "status must be 'approved', 'dismissed', or 'pending'" });
     }
 
-    const feedback = loadFeedback();
-    const item = feedback.find((f) => f.id === req.params.id);
-    if (!item) {
-      return res.status(404).json({ error: "Feedback not found" });
+    const updates = { status, reviewedAt: new Date().toISOString() };
+
+    if (dynamo) {
+      const existing = await dbGetFeedback(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Feedback not found" });
+      const updated = await dbUpdateFeedback(req.params.id, updates);
+      return res.json(updated);
+    } else {
+      const feedback = loadFeedback();
+      const item = feedback.find((f) => f.id === req.params.id);
+      if (!item) return res.status(404).json({ error: "Feedback not found" });
+      Object.assign(item, updates);
+      saveFeedback(feedback);
+      return res.json(item);
     }
-
-    item.status = status;
-    item.reviewedAt = new Date().toISOString();
-    saveFeedback(feedback);
-
-    res.json(item);
   } catch (error) {
     console.error("Feedback update error:", error);
     res.status(500).json({ error: "Failed to update feedback" });
@@ -222,21 +301,27 @@ app.patch("/api/feedback/:id", (req, res) => {
 });
 
 // Delete feedback (admin)
-app.delete("/api/feedback/:id", (req, res) => {
+app.delete("/api/feedback/:id", async (req, res) => {
   try {
     const adminKey = req.headers["x-admin-key"];
     if (!process.env.ADMIN_KEY || adminKey !== process.env.ADMIN_KEY) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    let feedback = loadFeedback();
-    const before = feedback.length;
-    feedback = feedback.filter((f) => f.id !== req.params.id);
-    if (feedback.length === before) {
-      return res.status(404).json({ error: "Feedback not found" });
+    if (dynamo) {
+      const existing = await dbGetFeedback(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Feedback not found" });
+      await dbDeleteFeedback(req.params.id);
+    } else {
+      let feedback = loadFeedback();
+      const before = feedback.length;
+      feedback = feedback.filter((f) => f.id !== req.params.id);
+      if (feedback.length === before) {
+        return res.status(404).json({ error: "Feedback not found" });
+      }
+      saveFeedback(feedback);
     }
 
-    saveFeedback(feedback);
     res.json({ success: true });
   } catch (error) {
     console.error("Feedback delete error:", error);
