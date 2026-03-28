@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@langchain/anthropic": "^0.3.0",
-    "@langchain/community": "^0.3.0",
     "@langchain/core": "^0.3.0",
     "@langchain/pinecone": "^0.1.0",
     "@pinecone-database/pinecone": "^4.0.0",
@@ -18,14 +17,14 @@
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
     "express-rate-limit": "^8.3.1",
-    "langchain": "^0.3.0",
-    "pdf-parse": "^1.1.1",
-    "serverless-http": "^3.2.0",
-    "uuid": "^11.0.0"
+    "serverless-http": "^3.2.0"
   },
   "devDependencies": {
     "@aws-sdk/client-dynamodb": "^3.0.0",
     "@aws-sdk/lib-dynamodb": "^3.0.0",
-    "nodemon": "^3.1.0"
+    "langchain": "^0.3.0",
+    "nodemon": "^3.1.0",
+    "pdf-parse": "^1.1.1",
+    "uuid": "^11.0.0"
   }
 }
