@@ -9,8 +9,6 @@
     "seed": "node ../scripts/seed-pinecone.js"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.0.0",
-    "@aws-sdk/lib-dynamodb": "^3.0.0",
     "@langchain/anthropic": "^0.3.0",
     "@langchain/community": "^0.3.0",
     "@langchain/core": "^0.3.0",
@@ -26,6 +24,8 @@
     "uuid": "^11.0.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/lib-dynamodb": "^3.0.0",
     "nodemon": "^3.1.0"
   }
 }
